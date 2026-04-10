@@ -30,8 +30,8 @@ def search_mealdb(ingredient: str) -> str:
         if not data.get("meals"):
             return f"MEALDB_NOT_FOUND: '{ingredient}'으로 TheMealDB에서 레시피를 찾을 수 없습니다."
 
-        # 상위 2개 레시피만 상세 조회
-        meals = data["meals"][:2]
+        # 상위 1개 레시피만 상세 조회
+        meals = data["meals"][:1]
         results = []
         for meal in meals:
             detail_url = f"https://www.themealdb.com/api/json/v1/1/lookup.php?i={meal['idMeal']}"
@@ -161,14 +161,18 @@ def generate_recipe_with_llm(ingredients: str, excluded_ingredients: str = "") -
         f"\n반드시 제외할 재료: {excluded_ingredients}" if excluded_ingredients else ""
     )
 
-    prompt = f"""다음 재료들로 만들 수 있는 맛있는 한국 가정식 또는 퓨전 요리 레시피를 상세하게 알려주세요.
+    prompt = f"""다음 재료들로 만들 수 있는 요리 **딱 1가지**의 레시피를 상세하게 알려주세요.
+여러 요리를 나열하거나 "또는", "다른 선택지" 같은 대안을 절대 제시하지 마세요.
+가장 잘 어울리는 요리 하나만 골라 완성된 레시피를 작성합니다.
 
 사용 가능한 재료: {ingredients}{excluded_line}
 
 아래 형식을 정확히 따라 한국어로 작성해주세요:
 
 ## 요리 이름
-[요리 이름]
+[짧고 자연스러운 요리 이름 — 재료명을 나열하지 말고, 조리법·카테고리·주재료 1개 중심으로 작성
+ 좋은 예: "갈릭 스프레드", "민트 초콜릿 무스", "파인애플 볶음밥", "된장 크림파스타"
+ 나쁜 예: "파인애플 콜라 글레이즈와 초콜릿-민트 딥 김치-갈릭 크런치 토핑"]
 
 ## 필요한 재료
 - [재료명]: [분량]

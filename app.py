@@ -224,15 +224,12 @@ if run_clicked and all_ingredients and openai_key:
     ingredients_str = ", ".join(all_ingredients)
     excluded_str    = ", ".join(selected_allergens) if selected_allergens else "없음"
 
-    user_query = f"""다음 재료로 만들 수 있는 요리를 추천해주세요.
+    user_query = f"""다음 재료로 만들 수 있는 요리 **딱 1개**의 완성된 레시피를 알려주세요.
 
 보유 재료: {ingredients_str}
 제외할 재료 (알레르기/거부): {excluded_str}
 
-단계대로 진행해주세요:
-1. 주요 재료로 TheMealDB에서 레시피를 검색해주세요.
-2. 레시피의 영양 정보를 조회해주세요.
-3. 최종 레시피를 한국어로 상세하게 정리해주세요."""
+여러 요리를 나열하지 말고, 가장 적합한 요리 하나만 골라 완성된 레시피를 제공해주세요."""
 
     # 세션 초기화
     st.session_state.recipe_result = None
