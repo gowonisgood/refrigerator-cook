@@ -1,4 +1,5 @@
 import os
+import re
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -63,25 +64,6 @@ st.markdown("""
     margin-top: 1rem;
 }
 
-/* 단계 박스 */
-.step-box {
-    background: #f8f9fa; border-radius: 10px;
-    padding: 1rem 1.2rem; margin: 0.4rem 0;
-    border-left: 3px solid #ff6b35;
-}
-
-/* 영양 카드 */
-.nutrition-grid {
-    display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
-    margin: 1rem 0;
-}
-.nutrition-item {
-    background: #fff3e0; border-radius: 10px;
-    padding: 0.8rem; text-align: center;
-}
-.nutrition-item .value { font-size: 1.4rem; font-weight: 700; color: #e65100; }
-.nutrition-item .label { font-size: 0.8rem; color: #757575; margin-top: 2px; }
-
 /* 버튼 */
 div.stButton > button[kind="primary"] {
     background: linear-gradient(135deg, #ff6b35, #f7931e);
@@ -119,8 +101,23 @@ TOOL_LABEL_MAP = {
     "generate_recipe_with_llm": ("✨", "AI가 직접 레시피 생성 중"),
 }
 
+# ── 영양 정보 파싱 헬퍼 ───────────────────────────────────────────────────────
+def parse_nutrition(text: str) -> dict[str, str]:
+    """LLM 응답 텍스트에서 영양 수치를 추출합니다."""
+    patterns = {
+        "칼로리": r"칼로리[^\d]*(\d+(?:\.\d+)?)\s*kcal",
+        "단백질": r"단백질[^\d]*(\d+(?:\.\d+)?)\s*g",
+        "탄수화물": r"탄수화물[^\d]*(\d+(?:\.\d+)?)\s*g",
+        "지방":   r"지방[^\d]*(\d+(?:\.\d+)?)\s*g",
+    }
+    result = {}
+    for key, pattern in patterns.items():
+        match = re.search(pattern, text)
+        result[key] = match.group(1) if match else "?"
+    return result
+
 # ── 세션 상태 초기화 ──────────────────────────────────────────────────────────
-for _k, _v in [("recipe_result", None), ("agent_steps", []), ("source", "")]:
+for _k, _v in [("recipe_result", None), ("agent_steps", []), ("source", ""), ("rating", None)]:
     if _k not in st.session_state:
         st.session_state[_k] = _v
 
@@ -143,15 +140,21 @@ with st.sidebar:
 
     st.divider()
 
-    # ── 자주 쓰는 재료 체크박스 ──
+    # ── 인원 수 슬라이더 ──
+    st.markdown("### 👥 인원 수")
+    serving_size = st.slider("인원 수", min_value=1, max_value=6, value=2, step=1,
+                              label_visibility="collapsed")
+    st.caption(f"{serving_size}인분 기준으로 레시피를 생성합니다")
+
+    st.divider()
+
+    # ── 자주 쓰는 재료 pills ──
     st.markdown("### 🥕 재료 빠른 선택")
     selected_common: list[str] = []
     for category, items in COMMON_INGREDIENTS.items():
-        with st.expander(category, expanded=False):
-            cols = st.columns(2)
-            for idx, item in enumerate(items):
-                if cols[idx % 2].checkbox(item, key=f"ck_{item}"):
-                    selected_common.append(item)
+        selected = st.pills(category, items, selection_mode="multi", key=f"pills_{category}")
+        if selected:
+            selected_common.extend(selected)
 
     st.divider()
 
@@ -178,7 +181,7 @@ st.markdown("""
 text_input = st.text_input(
     "✏️ 보유한 재료를 입력하세요",
     placeholder="예: 당근, 계란, 밀가루, 우유",
-    help="쉼표(,)로 구분하여 여러 재료를 입력할 수 있습니다. 왼쪽 사이드바에서 체크박스로도 선택 가능합니다.",
+    help="쉼표(,)로 구분하여 여러 재료를 입력할 수 있습니다. 왼쪽 사이드바에서 pills로도 선택 가능합니다.",
 )
 
 # 입력 재료 통합 & 중복 제거
@@ -225,6 +228,7 @@ if run_clicked and all_ingredients and openai_key:
     excluded_str    = ", ".join(selected_allergens) if selected_allergens else "없음"
 
     user_query = f"""다음 재료로 만들 수 있는 요리 **딱 1개**의 완성된 레시피를 알려주세요.
+{serving_size}인분 기준으로 재료 분량을 작성해주세요.
 
 보유 재료: {ingredients_str}
 제외할 재료 (알레르기/거부): {excluded_str}
@@ -235,8 +239,9 @@ if run_clicked and all_ingredients and openai_key:
     st.session_state.recipe_result = None
     st.session_state.agent_steps   = []
     st.session_state.source        = ""
+    st.session_state.rating        = None
 
-    agent       = create_recipe_agent()
+    agent        = create_recipe_agent()
     final_answer = ""
     steps: list[str] = []
 
@@ -282,48 +287,72 @@ if run_clicked and all_ingredients and openai_key:
                 status.update(label="✅ 레시피 준비 완료!", state="complete", expanded=False)
                 st.session_state.recipe_result = final_answer
                 st.session_state.agent_steps   = steps
+                st.toast("레시피가 준비됐어요!", icon="🍳")
             else:
                 status.update(label="⚠️ 레시피를 생성하지 못했습니다.", state="error", expanded=True)
 
         except Exception as exc:
-            status.update(label=f"❌ 오류 발생", state="error", expanded=True)
+            status.update(label="❌ 오류 발생", state="error", expanded=True)
             st.error(f"오류: {exc}")
 
 # ── 결과 표시 ─────────────────────────────────────────────────────────────────
 if st.session_state.recipe_result:
     st.divider()
 
-    # 출처 배지
-    source = st.session_state.source
-    if source == "TheMealDB":
-        st.markdown(
-            '<span style="background:#e3f2fd;color:#1565c0;padding:4px 14px;'
-            'border-radius:20px;font-weight:600;font-size:0.85rem;">🗄️ TheMealDB</span>',
-            unsafe_allow_html=True,
+    # ── 출처 배지 (st.badge) + 다운로드 버튼 ──
+    col_badge, col_dl = st.columns([3, 1])
+    with col_badge:
+        source = st.session_state.source
+        if source == "TheMealDB":
+            st.badge("TheMealDB", color="blue", icon="🗄️")
+        elif source == "AI 직접 생성":
+            st.badge("AI 직접 생성", color="violet", icon="✨")
+
+    with col_dl:
+        st.download_button(
+            "📥 레시피 저장",
+            data=st.session_state.recipe_result,
+            file_name="recipe.md",
+            mime="text/markdown",
+            use_container_width=True,
         )
-    elif source == "AI 직접 생성":
+
+    # ── 탭 레이아웃 ──
+    tab_recipe, tab_nutrition, tab_log = st.tabs(["🍽️ 레시피", "📊 영양정보", "🔄 실행 로그"])
+
+    with tab_recipe:
         st.markdown(
-            '<span style="background:#f3e5f5;color:#6a1b9a;padding:4px 14px;'
-            'border-radius:20px;font-weight:600;font-size:0.85rem;">✨ AI 직접 생성</span>',
+            f'<div class="recipe-card">{st.session_state.recipe_result}</div>',
             unsafe_allow_html=True,
         )
 
-    # 실행 단계 요약 (접기/펼치기)
-    if st.session_state.agent_steps:
-        with st.expander("🔄 Agent 실행 단계 보기", expanded=False):
+    with tab_nutrition:
+        nutrition = parse_nutrition(st.session_state.recipe_result)
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("🔥 칼로리", f"{nutrition['칼로리']} kcal")
+        col2.metric("💪 단백질", f"{nutrition['단백질']} g")
+        col3.metric("🌾 탄수화물", f"{nutrition['탄수화물']} g")
+        col4.metric("🫒 지방", f"{nutrition['지방']} g")
+
+        if "?" in nutrition.values():
+            st.caption("일부 수치를 파싱하지 못했습니다. 레시피 본문의 영양 정보 섹션을 확인해주세요.")
+
+    with tab_log:
+        if st.session_state.agent_steps:
             for step in st.session_state.agent_steps:
                 st.markdown(f"- {step}")
+        else:
+            st.caption("실행 로그가 없습니다.")
 
-    # 레시피 본문
-    st.markdown(
-        f'<div class="recipe-card">{st.session_state.recipe_result}</div>',
-        unsafe_allow_html=True,
-    )
+    # ── 별점 & 다시 검색 ──
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("**이 레시피가 마음에 드셨나요?**")
+    st.feedback("stars", key="rating")
 
-    # 다시 검색 버튼
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("🔄 다른 재료로 다시 검색", use_container_width=True):
         st.session_state.recipe_result = None
         st.session_state.agent_steps   = []
         st.session_state.source        = ""
+        st.session_state.rating        = None
         st.rerun()
