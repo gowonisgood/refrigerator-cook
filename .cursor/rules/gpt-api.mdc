@@ -1,0 +1,22 @@
+---
+alwaysApply: true
+---
+
+## OpenAI API 사용 규칙
+이 프로젝트는 OpenAI gpt-5-mini 모델을 사용합니다.
+OpenAI API 사용 시 반드시 공식 문서(https://platform.openai.com/docs/api-reference)와
+Context7 MCP를 참조하여 해당 모델이 지원하는 파라미터를 확인하세요.
+
+### 모델 제약
+- 사용 모델: gpt-5-mini (변경 금지)
+- 임베딩: text-embedding-3-small
+- gpt-4, gpt-4o 등 구버전으로 절대 다운그레이드하지 마세요.
+
+### 파라미터 제약
+- gpt-5 계열은 temperature, top_p 등 샘플링 파라미터를 지원하지 않습니다.
+  문서: https://platform.openai.com/docs/api-reference/chat/create
+- API 에러 시 모델을 변경하지 말고, 지원되지 않는 파라미터를 제거하세요.
+
+### LangChain 사용 시
+- Context7 MCP로 langchain-openai 문서를 참조하여 최신 API를 확인하세요.
+- ChatOpenAI() 호출 시 model="gpt-5-mini"만 지정하고, 지원되지 않는 파라미터를 넣지 마세요.
